@@ -1,0 +1,39 @@
+name: Laravel CI/CD with Docker
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and Test Laravel (Docker)
+        run: |
+          cp .env.testing .env
+          docker compose up -d --build
+          docker compose exec -T app composer install --no-interaction --prefer-dist --optimize-autoloader
+          docker compose exec -T app php artisan key:generate
+          docker compose exec -T app php artisan migrate --force
+          docker compose exec -T app php artisan test
+
+      - name: Deploy to Azure VM via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.AZURE_VM_HOST }}
+          username: ${{ secrets.AZURE_VM_USER }}
+          key: ${{ secrets.AZURE_VM_SSH_KEY }}
+          script: |
+            cd /var/www/your-app
+            git pull origin main
+            cp .env.production .env
+            docker compose down
+            docker compose up -d --build
+            docker compose exec -T app php artisan migrate --force
